@@ -40,6 +40,8 @@ import numpy as np
 from string import Template
 from agent_torch.core.helpers import get_by_path
 
+ #HTML template for the Cesium visualization
+# Contains the necessary HTML, CSS, and JavaScript code to render the 3D visualization
 geoplot_template = """
 <!doctype html>
 <html lang="en">
@@ -221,11 +223,11 @@ class GeoPlot:
     def __init__(self, config, options):
         self.config = config
         (
-            self.cesium_token,
-            self.step_time,
-            self.entity_position,
-            self.entity_property,
-            self.visualization_type,
+            self.cesium_token, # Token used to access CesiumJS API
+            self.step_time,    # Time step between data points in seconds
+            self.entity_position, # Path to entity position in state dictionary
+            self.entity_property, # Path to the property to visualize
+            self.visualization_type, # Type of visualization ('color' or 'size')
         ) = (
             options["cesium_token"],
             options["step_time"],
@@ -235,18 +237,27 @@ class GeoPlot:
         )
 
     def render(self, state_trajectory):
+		# Initialize lists to store coordinates and property values
         coords, values = [], []
+
+		 # Get simulation name from config and prepare output file paths
         name = self.config["simulation_metadata"]["name"]
         geodata_path, geoplot_path = f"{name}.geojson", f"{name}.html"
 
+         # Extract coordinates and property values from each state in the trajectory
         for i in range(0, len(state_trajectory) - 1):
+			 # Get the final state of each episode
             final_state = state_trajectory[i][-1]
 
+            # Extract coordinates and convert to list format
             coords = np.array(read_var(final_state, self.entity_position)).tolist()
+            # Extract property values, flatten if needed, and store
             values.append(
                 np.array(read_var(final_state, self.entity_property)).flatten().tolist()
             )
-
+        
+		# Generate timestamps for the simulation timeline
+		# Starting from current time and advancing by step_time for each step
         start_time = pd.Timestamp.utcnow()
         timestamps = [
             start_time + pd.Timedelta(seconds=i * self.step_time)
@@ -255,16 +266,19 @@ class GeoPlot:
                 * self.config["simulation_metadata"]["num_steps_per_episode"]
             )
         ]
-
+        
+		# Create GeoJSON data structure for each entity
         geojsons = []
         for i, coord in enumerate(coords):
             features = []
+			# For each timestamp and corresponding value, create a GeoJSON feature
             for time, value_list in zip(timestamps, values):
                 features.append(
                     {
                         "type": "Feature",
                         "geometry": {
                             "type": "Point",
+							# Convert latitude and longitude to GeoJSON format
                             "coordinates": [coord[1], coord[0]],
                         },
                         "properties": {
@@ -273,11 +287,14 @@ class GeoPlot:
                         },
                     }
                 )
+				# Add the collection of features to our GeoJSON list
             geojsons.append({"type": "FeatureCollection", "features": features})
-
+        
+		# Write the GeoJSON data to a file
         with open(geodata_path, "w", encoding="utf-8") as f:
             json.dump(geojsons, f, ensure_ascii=False, indent=2)
-
+        
+		# Generate the HTML visualization using the template
         tmpl = Template(geoplot_template)
         with open(geoplot_path, "w", encoding="utf-8") as f:
             f.write(
